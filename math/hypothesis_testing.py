@@ -2,6 +2,7 @@
 # stats class 
 # 6/16/2021
 
+# shoot me an email! augustgl@protonmail.ch
 
 # 2 sample hypothesis testing 
 
