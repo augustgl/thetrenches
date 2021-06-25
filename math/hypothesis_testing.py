@@ -6,10 +6,8 @@
 
 # 2 sample hypothesis testing 
 
-
 import scipy.stats as st # for z score and p value
 import math # sqrt
-
 
 # verify that we can do the test
 
