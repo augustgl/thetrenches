@@ -1,0 +1,189 @@
+THE TIKTOK SPYWARE CONSPIRACY 
+
+
+by August GL (live from the hacker den)
+
+email: augustgl@protonmail.ch
+github: github.com/augustgl
+
+Last year, towards the end of 2020 I came across a couple of articles claiming that TikTok, a large social media platform, is spyware.
+TikTok rose from the ashes when Musica.ly died in like 2018 or something, I don't know. It's esentially "funny videos/dancing."
+
+TikTok is currently owned by a company based in china known as "Bytedance"
+
+Personally, I don't like TikTok, but if you use it, fine. I myself will never. But not because I don't like it. I'll never use it because of the things I found when I reverse engineered the app. 
+
+I downloaded an APK for tiktok. An APK is essentially a zip file, but it has all the necessary components inside to install an android application. I unzipped it with unzip. Android applications are written in Java. I hate Java because it's one of those languages that is reverse engineered ridiculously easy, like C# (microsoft java). But before the java code can be run on the phone, it has to be compiled into a .dex file. a .dex is a "dalvik executable" which is what the java code gets turned into when it's finally ready to be ran on the phone. 
+
+So I have a .dex, and not a .jar, the type of file that my java decompiler accepts. Well, looks like the article is over guys! thanks for reading
+
+
+
+
+
+just kidding. I ran a tool called dex2jar that converted it to a jar file. I placed that in the java decompiler, and I was looking at the decompiled java source code. And it was huge. I sifted through it for a couple hours, and found the main part. And then I started reading.
+
+Now, I'm not saying 100% for sure that this code is malicious, but it's VERY sketchy, and extremely personal, like the crackhead you see outside 711 at 1 AM who comes half an inch from your face to start asking you questions about your life. Here are some amazing code snippets I found. 
+
+Here's from a file called "LoadAddressTask.java"
+
+private void loadDistrictFromCity(JSONObject paramJSONObject) throws JSONException {
+    if (paramJSONObject == null)
+      return; 
+    ArrayList<AddressInfo> arrayList = new ArrayList();
+    JSONArray jSONArray = paramJSONObject.getJSONArray("regionEntitys");
+    StringBuilder stringBuilder = new StringBuilder();
+    stringBuilder.append(paramJSONObject.getString("region"));
+    stringBuilder.append(paramJSONObject.getString("code"));
+    stringBuilder.append("city");
+    String str = stringBuilder.toString();
+    for (int i = 0; i < jSONArray.length(); i++)
+      arrayList.add(new AddressInfo(jSONArray.getJSONObject(i).getString("region"), jSONArray.getJSONObject(i).getString("code"), "district")); 
+    if (arrayList.size() <= 0) {
+      arrayList.add(new AddressInfo(this.DEFAULT_DISTRICT_CHINA, "", "district"));
+      mCache.put(str, arrayList);
+      mDepthCache.put(str, Integer.valueOf(2));
+      return;
+    } 
+    mCache.put(str, arrayList);
+    mDepthCache.put(str, Integer.valueOf(2));
+  }
+  
+  private List<AddressInfo> loadProvince(JSONArray paramJSONArray) throws JSONException {
+    ArrayList<AddressInfo> arrayList = new ArrayList();
+    for (int i = 0; i < paramJSONArray.length(); i++) {
+      JSONObject jSONObject = paramJSONArray.getJSONObject(i);
+      String str1 = jSONObject.getString("region");
+      String str2 = jSONObject.getString("code");
+      loadCityFromProvince(jSONObject);
+      if (!arrayList.contains(str1))
+        arrayList.add(new AddressInfo(str1, str2, "province")); 
+    } 
+    mCache.put("province", arrayList);
+    mDepthCache.put("province", Integer.valueOf(0));
+    return arrayList;
+  }
+
+
+seems legit. To be fair, this could be used legitematly, but I don't like it. Moving on to another snippet from a file called "AppbrandMapActivity.java"
+
+
+private void requestPermission() {
+    HashSet<String> hashSet = new HashSet();
+    hashSet.add("android.permission.ACCESS_COARSE_LOCATION");
+    hashSet.add("android.permission.ACCESS_FINE_LOCATION");
+    PermissionsManager.getInstance().requestPermissionsIfNecessaryForResult((Activity)this, hashSet, new PermissionsResultAction() {
+          public void onDenied(String param1String) {
+            AppbrandMapActivity.this.moveCamera();
+            AppbrandMapActivity.this.initEndPoint();
+          }
+          
+          public void onGranted() {
+            try {
+              AppbrandMapActivity.this.moveCamera();
+              AppbrandMapActivity.this.initEndPoint();
+              return;
+            } catch (Exception exception) {
+              AppBrandLogger.e("tma_AppbrandMapActivity", new Object[] { "", exception });
+              return;
+            } 
+          }
+        });
+  }
+
+
+I am no android programmer, and I definitely cannot develop in java, but I can see what's happening here. The two important lines are this: 
+
+hashSet.add("android.permission.ACCESS_COARSE_LOCATION");
+hashSet.add("android.permission.ACCESS_FINE_LOCATION");
+
+I went on the android developer site and found that this is what ACCESS_FINE_LOCATION requests. 
+
+"Allows an app to access precise location."
+
+Why does tiktok need my precise location? It shouldn't. The last code snippet we'll look at is this, from a file called TMALocation.java
+
+public static TMALocation fromJson(JSONObject paramJSONObject) throws JSONException {
+    if (paramJSONObject == null)
+      return null; 
+    TMALocation tMALocation = new TMALocation(paramJSONObject.optString("provider"));
+    tMALocation.setLatitude(paramJSONObject.optDouble("latitude"));
+    tMALocation.setLongitude(paramJSONObject.optDouble("longitude"));
+    tMALocation.setTime(paramJSONObject.optLong("loc_time"));
+    tMALocation.setSpeed((float)paramJSONObject.optDouble("speed", 0.0D));
+    tMALocation.setAccuracy((float)paramJSONObject.optDouble("accuracy"));
+    tMALocation.setAltitude(paramJSONObject.optDouble("altitude"));
+    tMALocation.setStatusCode(paramJSONObject.optInt("statusCode"));
+    tMALocation.setRawImplStatusCode(paramJSONObject.optInt("rawImplStatusCode"));
+    tMALocation.setAddress(paramJSONObject.optString("address"));
+    tMALocation.setCountry(paramJSONObject.optString("country"));
+    tMALocation.setProvince(paramJSONObject.optString("province"));
+    tMALocation.setCity(paramJSONObject.optString("city"));
+    tMALocation.setDistrict(paramJSONObject.optString("district"));
+    tMALocation.setLocType(paramJSONObject.optInt("loctype"));
+    if (Build.VERSION.SDK_INT >= 26)
+      tMALocation.setVerticalAccuracyMeters(0.0F); 
+    return tMALocation;
+  }
+
+
+  // code code code it's too long to put it all
+
+  public JSONObject toJson() {
+    JSONObject jSONObject = new JSONObject();
+    try {
+      jSONObject.putOpt("provider", getProvider());
+      jSONObject.putOpt("latitude", Double.valueOf(getLatitude()));
+      jSONObject.putOpt("longitude", Double.valueOf(getLongitude()));
+      jSONObject.putOpt("loc_time", Long.valueOf(getTime()));
+      jSONObject.putOpt("speed", Float.valueOf(getSpeed()));
+      jSONObject.putOpt("accuracy", Float.valueOf(getAccuracy()));
+      jSONObject.putOpt("altitude", Double.valueOf(getAltitude()));
+      jSONObject.putOpt("statusCode", Integer.valueOf(getStatusCode()));
+      jSONObject.putOpt("rawImplStatusCode", Integer.valueOf(getRawImplStatusCode()));
+      jSONObject.putOpt("address", getAddress());
+      jSONObject.putOpt("country", getCountry());
+      jSONObject.putOpt("province", getProvince());
+      jSONObject.putOpt("city", getCity());
+      jSONObject.putOpt("district", getDistrict());
+      jSONObject.putOpt("loctype", Integer.valueOf(getLocType()));
+      float f = 0.0F;
+      if (Build.VERSION.SDK_INT >= 26)
+        f = getVerticalAccuracyMeters(); 
+      jSONObject.put("verticalAccuracy", f);
+      return jSONObject;
+    } catch (JSONException jSONException) {
+      AppBrandLogger.eWithThrowable("TMALocation", "tojson", (Throwable)jSONException);
+      return jSONObject;
+    } 
+  }
+
+
+Yeah guys, this seems like a legit social media platform to me. Why does it need that much information!? Why does it need my fucking altitude? 
+
+Keep in mind, all of this code COULD be used legitemately. But looking at TikTok as a platform, I don't see why they need my latitude and longitude. 
+
+So, after I had reverse engineered TikTok, I sat back and thought for a minute. And then I released it on github. It blew up, I got 65+ stars in two days. TikTok found out, and they were not happy about it. The github repo was taken down, and I recieved a DMCA takedown notice. The DMCA notice is kinda long, so here's the important part. 
+
+
+github: Please provide a detailed description of the original copyrighted work that has allegedly been infringed. If possible, include a URL to where it is posted online.
+
+tiktok legal jackass: The original copyrighted work is source code for the TikTok Android app. Github user augustgl appears to claim to have reverse engineered the app. He posted the code to the following GitHub repository: https://github.com/augustgl/tiktok_source
+
+
+"appears to claim to have reverse engineered the app"
+
+"claim"
+
+I don't "claim to have reverse engineered the app"
+I reverse engineered the app. 
+
+The process for reverse engineering an android application summarized is this:
+
+[+] obtain a copy of the APK for the app in question
+[+] unzip with the unzip linux utility like you would a regular zip file
+[+] run dex2jar on the .dex file in the unzipped directory. You now have a .JAR file
+[+] put the .jar in any java decompiler 
+[+] and you're looking at source code!
+
+Thanks for reading. Good luck in this foul year of our lord, 2021. 

